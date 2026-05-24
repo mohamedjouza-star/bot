@@ -30,13 +30,25 @@ log = logging.getLogger(__name__)
 # ============================================================
 # 1. إعدادات البيئة (Render Environment Variables)
 # ============================================================
-TELEGRAM_TOKEN  = os.environ["TELEGRAM_TOKEN"]
-BOT_USERNAME    = os.environ.get("BOT_USERNAME", "")
-HASH_PEPPER     = os.environ.get("HASH_PEPPER", "zero-rts-default-pepper-2025")
+def _require_env(key: str) -> str:
+    val = os.environ.get(key)
+    if not val:
+        log.critical(f"❌ متغير البيئة مفقود: {key}  — أضفه في Render → Environment")
+        raise SystemExit(1)
+    return val
+
+TELEGRAM_TOKEN = _require_env("TELEGRAM_TOKEN")
+BOT_USERNAME   = os.environ.get("BOT_USERNAME", "")
+HASH_PEPPER    = os.environ.get("HASH_PEPPER", "zero-rts-default-pepper-2025")
 
 # GCP_SERVICE_ACCOUNT: نص JSON كامل مخزّن كـ env var
-_gcp_raw        = os.environ["GCP_SERVICE_ACCOUNT"]
-GCP_CREDS_DICT  = json.loads(_gcp_raw)
+_gcp_raw = _require_env("GCP_SERVICE_ACCOUNT")
+try:
+    GCP_CREDS_DICT = json.loads(_gcp_raw)
+except json.JSONDecodeError as e:
+    log.critical(f"❌ GCP_SERVICE_ACCOUNT ليس JSON صحيحاً: {e}")
+    log.critical("تأكد أن القيمة تبدأ بـ { وتنتهي بـ } بدون علامات اقتباس زائدة")
+    raise SystemExit(1)
 
 # ============================================================
 # 2. الحماية والتشفير
@@ -47,6 +59,7 @@ def hash_code(code: str) -> str:
         str(code).encode(),
         hashlib.sha256
     ).hexdigest()
+
 
 # ============================================================
 # 3. الوظائف المساعدة
@@ -106,8 +119,12 @@ def connect_to_gsheet():
     client = gspread.authorize(creds)
     return client.open("Zero_RTS_Database")
 
-spreadsheet = connect_to_gsheet()
-log.info("✅ Connected to Google Sheets")
+try:
+    spreadsheet = connect_to_gsheet()
+    log.info("✅ Connected to Google Sheets")
+except Exception as e:
+    log.critical(f"❌ فشل الاتصال بـ Google Sheets: {e}")
+    raise SystemExit(1)
 
 # ============================================================
 # 5. جلب البيانات (بدون Streamlit cache — cache بسيط في الذاكرة)
@@ -322,7 +339,22 @@ def handle_check(m):
 # ============================================================
 # 8. تشغيل البوت
 # ============================================================
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
+class _Health(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers()
+        self.wfile.write(b"Zero RTS Bot OK")
+    def log_message(self, *a): pass
+
+def _run_health():
+    port = int(os.environ.get("PORT", 10000))
+    HTTPServer(("0.0.0.0", port), _Health).serve_forever()
+
 if __name__ == "__main__":
+    threading.Thread(target=_run_health, daemon=True).start()
+    log.info("🌐 Health server started")
     log.info("🚀 Starting bot polling...")
     while True:
         try:
