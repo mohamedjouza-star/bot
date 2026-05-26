@@ -32,7 +32,7 @@ def _get_pepper() -> str:
     return os.environ.get("HASH_PEPPER", "zero-rts-default-pepper-2025")
 
 def hash_code(code: str) -> str:
-    return hmac.new(_get_pepper().encode(), str(code).encode(), hashlib.sha256).hexdigest()
+    return hmac.new(_get_pepper().encode(), str(code).encode(), hashlib.sha256).hexdigest()  # type: ignore
 
 def connect_to_gsheet():
     scope = [
@@ -58,13 +58,21 @@ _bot_cache = {"data": None, "ts": 0}
 def fetch_data(ttl=300):
     if _bot_cache["data"] and time.time() - _bot_cache["ts"] < ttl:
         return _bot_cache["data"]
+    if not spreadsheet:
+        print("❌ fetch_data: لا يوجد اتصال بـ Sheets")
+        return [], []
     try:
-        bl = spreadsheet.get_worksheet(0).get_all_values()
-        rp = spreadsheet.worksheet("Reports").get_all_values()
+        bl_raw = spreadsheet.get_worksheet(0).get_all_values()
+        rp_raw = spreadsheet.worksheet("Reports").get_all_values()
+        # تخطي صف العناوين (الصف الأول لا يبدأ برقم هاتف)
+        bl = bl_raw[1:] if bl_raw and not str(bl_raw[0][0]).startswith('0') else bl_raw
+        rp = rp_raw[1:] if rp_raw and not str(rp_raw[0][1]).startswith('0') else rp_raw
+        print(f"✅ fetch_data: {len(bl)} سجل، {len(rp)} بلاغ")
         _bot_cache["data"] = (bl, rp)
         _bot_cache["ts"]   = time.time()
         return bl, rp
-    except:
+    except Exception as e:
+        print(f"❌ fetch_data error: {e}")
         return [], []
 
 def clear_cache():
@@ -272,10 +280,21 @@ def _do_check(bot, m, phone_raw: str):
         return
 
     bl, rp = fetch_data()
+    if not bl and not rp:
+        bot.reply_to(m, "⚠️ تعذّر الاتصال بقاعدة البيانات — حاول لاحقاً")
+        return
     s, sts, dts, rc, lc = search_logic(q, bl, rp)
 
-    if not sts and s >= 0:
-        bot.reply_to(m, "🟢 *الزبون سليم* ✅", parse_mode="Markdown")
+    total_records = rc + lc
+    if total_records == 0 and not sts:
+        bot.reply_to(m, "🟢 *الزبون سليم* — لا توجد سجلات في القاعدة", parse_mode="Markdown")
+    elif s >= 0 and not sts:
+        bot.reply_to(m,
+            f"🟢 *الزبون سليم* ✅\n\n"
+            f"✅ استلامات: {lc}\n"
+            f"🔴 رجوعات: {rc}",
+            parse_mode="Markdown"
+        )
     else:
         tr, adv, _, pct = predict_behavior(s, dts, sts, rc, lc)
         bar = "🔴" * (pct // 20) + "⚪" * (5 - pct // 20)
