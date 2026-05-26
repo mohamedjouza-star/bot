@@ -36,15 +36,12 @@ def hash_code(code: str) -> str:
     return hmac.new(_get_pepper().encode(), str(code).encode(), hashlib.sha256).hexdigest()  # type: ignore
 
 def connect_to_gsheet():
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive.file"
-    ]
     try:
         raw = os.environ.get("GCP_SERVICE_ACCOUNT", "")
         creds_dict = json.loads(raw)
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        return gspread.authorize(creds).open("Zero_RTS_Database")
+        # ✅ service_account_from_dict هي الطريقة الموصى بها في gspread 6+
+        client = gspread.service_account_from_dict(creds_dict)
+        return client.open("Zero_RTS_Database")
     except Exception as e:
         print(f"⚠️ خطأ في الاتصال بـ Sheets: {e}")
         return None
