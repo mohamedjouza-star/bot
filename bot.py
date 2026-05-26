@@ -37,8 +37,7 @@ def hash_code(code: str) -> str:
 
 def connect_to_gsheet():
     scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
+        "https://www.googleapis.com/auth/spreadsheets"
     ]
     try:
         raw = os.environ.get("GCP_SERVICE_ACCOUNT", "")
@@ -88,6 +87,15 @@ def remove_accents(text: str) -> str:
         c for c in unicodedata.normalize('NFD', str(text))
         if unicodedata.category(c) != 'Mn'
     ).lower().strip()
+
+def sanitize_input(text: str, max_len: int = 100) -> str:
+    """يمنع Formula Injection في Google Sheets"""
+    if not text: return ""
+    text = str(text).strip()
+    text = text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    if text and text[0] in ("=", "+", "-", "@", "|", "%"):
+        text = "'" + text
+    return text[:max_len]
 
 def normalize_phone(phone) -> str:
     try:
@@ -227,12 +235,22 @@ def predict_behavior(score, dates, stores, retour_count, livree_count):
     else:         trend = "📉 نشاط مستقر أو قديم"
 
     total = retour_count + livree_count
-    danger_pct = min(int((retour_count / total) * 100), 99) if total > 0 else 0
+    if total > 0:
+        ratio_pct  = (retour_count / total) * 100
+        weight_pct = min(abs(score) / (abs(score) + 1) * 100, 99)
+        danger_pct = min(int(ratio_pct * 0.6 + weight_pct * 0.4), 99)
+    else:
+        danger_pct = 0
 
-    if score <= -2:   return trend, "🚫 لا ترسل — سجل رجوع سيء جداً",  "error",   danger_pct
-    if score <= -0.5: return trend, "📞 حذر — يوجد رجوعات سابقة",       "warning", danger_pct
-    if score >= 1:    return trend, "✅ زبون موثوق — سجل استلام جيد",    "success", danger_pct
-    return            trend, "✅ آمن — يمكن الإرسال",                    "success", danger_pct
+    high_ratio = total > 0 and (retour_count / total) >= 0.5
+
+    if score <= -2 or high_ratio:
+        return trend, "🚫 لا ترسل — سجل رجوع سيء جداً",  "error",   danger_pct
+    if score <= -0.5 or danger_pct >= 40:
+        return trend, "📞 حذر — يوجد رجوعات سابقة",       "warning", danger_pct
+    if score >= 1:
+        return trend, "✅ زبون موثوق — سجل استلام جيد",    "success", danger_pct
+    return            trend, "✅ آمن — يمكن الإرسال",       "success", danger_pct
 
 # ============================================================
 # 6. تفعيل المتجر في Sheets
@@ -476,7 +494,7 @@ def main():
         data    = st_data.get("data", {})
 
         if state == "await_store_name":
-            name = m.text.strip()
+            name = sanitize_input(m.text, max_len=50)  # ✅ تنظيف اسم المتجر
             if len(name) < 2:
                 bot.reply_to(m, "❌ الاسم قصير جداً — أعد المحاولة:")
                 return
@@ -602,7 +620,7 @@ def main():
             return
 
         data       = st_data.get("data", {})
-        reason     = c.data.replace("reason_", "")
+        reason     = sanitize_input(c.data.replace("reason_", ""), max_len=50)  # ✅
         store_name = data.get("store_name")
         phone      = data.get("phone")
         today      = datetime.now().strftime('%Y-%m-%d')
