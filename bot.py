@@ -17,6 +17,7 @@ import hmac
 import time
 import threading
 import unicodedata
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
 import pandas as pd
@@ -308,6 +309,24 @@ def _do_check(bot, m, phone_raw: str):
             parse_mode="Markdown"
         )
 
+
+# ============================================================
+# Health Server — يفتح port لـ Render Web Service
+# ============================================================
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK - Zero RTS Bot is running")
+    def log_message(self, *args):
+        pass  # إخفاء logs الطلبات
+
+def start_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    print(f"🌐 Health server on port {port}")
+    server.serve_forever()
+
 # ============================================================
 # 9. تشغيل البوت
 # ============================================================
@@ -316,6 +335,10 @@ def main():
     if not token:
         print("❌ TELEGRAM_TOKEN غير موجود في المتغيرات البيئية")
         return
+
+    # تشغيل Health Server في خيط منفصل
+    t = threading.Thread(target=start_health_server, daemon=True)
+    t.start()
 
     bot = telebot.TeleBot(token)
     # إيقاف أي webhook أو polling قديم قبل البدء
