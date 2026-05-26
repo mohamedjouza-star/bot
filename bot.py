@@ -318,8 +318,13 @@ def main():
         return
 
     bot = telebot.TeleBot(token)
-    bot.remove_webhook()
-    time.sleep(0.5)
+    # إيقاف أي webhook أو polling قديم قبل البدء
+    try:
+        bot.remove_webhook()
+        print("✅ Webhook removed")
+    except Exception as e:
+        print(f"⚠️ remove_webhook: {e}")
+    time.sleep(3)  # انتظر حتى تنتهي أي جلسة قديمة
 
     # ── /start ────────────────────────────────────────────────
     @bot.message_handler(commands=['start'])
@@ -612,11 +617,18 @@ def main():
             bot.infinity_polling(
                 timeout=30,
                 long_polling_timeout=30,
-                allowed_updates=['message', 'callback_query']
+                allowed_updates=['message', 'callback_query'],
+                restart_on_change=False,
+                skip_pending=True        # تجاهل الرسائل القديمة عند الإعادة
             )
         except Exception as e:
-            print(f"⚠️ Bot crashed: {e} — إعادة تشغيل خلال 5 ثوانٍ")
-            time.sleep(5)
+            err = str(e)
+            if "409" in err:
+                print("⚠️ خطأ 409: هناك نسخة أخرى تعمل — انتظار 60 ثانية...")
+                time.sleep(60)           # انتظر طويل حتى تنتهي النسخة الأخرى
+            else:
+                print(f"⚠️ Bot crashed: {e} — إعادة تشغيل خلال 10 ثوانٍ")
+                time.sleep(10)
 
 if __name__ == "__main__":
     main()
