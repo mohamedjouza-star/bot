@@ -37,7 +37,8 @@ def hash_code(code: str) -> str:
 
 def connect_to_gsheet():
     scope = [
-        "https://www.googleapis.com/auth/spreadsheets"
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file"
     ]
     try:
         raw = os.environ.get("GCP_SERVICE_ACCOUNT", "")
