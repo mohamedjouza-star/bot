@@ -243,7 +243,7 @@ def complete_activation(store_name: str, phones_data: list, chat_id: int):
     raw_code = str(random.randint(111111, 999999))
     today    = datetime.now().strftime('%Y-%m-%d')
 
-    spreadsheet.worksheet("Log").append_row([
+    spreadsheet.worksheet("BotLog").append_row([
         store_name, today, hash_code(raw_code), str(chat_id)
     ])
 
@@ -260,6 +260,21 @@ def complete_activation(store_name: str, phones_data: list, chat_id: int):
 
     clear_cache()
     return raw_code, len(to_add)
+
+
+# ============================================================
+# دالة مساعدة — البحث في BotLog بالـ chat_id
+# ============================================================
+def get_bot_store(chat_id) -> dict:
+    """يرجع سجل المتجر من BotLog أو None"""
+    try:
+        rows = spreadsheet.worksheet("BotLog").get_all_values()
+        for row in rows[1:]:  # تخطي العناوين
+            if len(row) >= 4 and str(row[3]) == str(chat_id):
+                return {"store_name": row[0], "date": row[1]}
+    except Exception as e:
+        print(f"❌ get_bot_store error: {e}")
+    return None
 
 # ============================================================
 # 7. حالة المستخدمين في الذاكرة
@@ -386,9 +401,7 @@ def main():
     # ── /activate ─────────────────────────────────────────────
     @bot.message_handler(commands=['activate'])
     def cmd_activate(m):
-        logs = spreadsheet.worksheet("Log").get_all_records()
-        already = next((l for l in logs
-                        if str(l.get('telegram_chat_id')) == str(m.chat.id)), None)
+        already = get_bot_store(m.chat.id)
         if already:
             bot.reply_to(m,
                 f"✅ متجرك *{already['store_name']}* مفعّل بالفعل!\n\n"
@@ -402,9 +415,7 @@ def main():
     # ── /newfile ──────────────────────────────────────────────
     @bot.message_handler(commands=['newfile'])
     def cmd_newfile(m):
-        logs = spreadsheet.worksheet("Log").get_all_records()
-        store = next((l for l in logs
-                      if str(l.get('telegram_chat_id')) == str(m.chat.id)), None)
+        store = get_bot_store(m.chat.id)
         if not store:
             bot.reply_to(m, "❌ متجرك غير مفعل\nاستخدم /activate أولاً")
             return
@@ -428,9 +439,7 @@ def main():
     # ── /report ───────────────────────────────────────────────
     @bot.message_handler(commands=['report'])
     def cmd_report(m):
-        logs = spreadsheet.worksheet("Log").get_all_records()
-        store = next((l for l in logs
-                      if str(l.get('telegram_chat_id')) == str(m.chat.id)), None)
+        store = get_bot_store(m.chat.id)
         if not store:
             bot.reply_to(m, "❌ متجرك غير مفعل\nاستخدم /activate أولاً")
             return
@@ -440,9 +449,7 @@ def main():
     # ── /stats ────────────────────────────────────────────────
     @bot.message_handler(commands=['stats'])
     def cmd_stats(m):
-        logs = spreadsheet.worksheet("Log").get_all_records()
-        store = next((l for l in logs
-                      if str(l.get('telegram_chat_id')) == str(m.chat.id)), None)
+        store = get_bot_store(m.chat.id)
         if not store:
             bot.reply_to(m, "❌ متجرك غير مفعل")
             return
